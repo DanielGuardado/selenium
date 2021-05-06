@@ -44,50 +44,54 @@ def testing():
     )
 
     while po_stack:
+        try:
+            current_po = po_stack.pop()
 
-        current_po = po_stack.pop()
+            web.get(
+                f"https://vendorcentral.amazon.com/hz/vendor/members/inv-mgmt/invoice-po-search?searchByNumberToken={current_po}"
+            )
 
-        web.get(
-            f"https://vendorcentral.amazon.com/hz/vendor/members/inv-mgmt/invoice-po-search?searchByNumberToken={current_po}"
-        )
-
-        export_all = web.find_element_by_link_text("Export All")
-        export_all.click()
-        sleep(3)
-        parse_po_file(current_po)
-        sleep(3)
-
-        buttons = web.find_elements_by_css_selector(".a-button-small")
-        for press in buttons:
-            window = web.window_handles[0]
-            web.switch_to_window(window)
-
+            export_all = web.find_element_by_link_text("Export All")
+            export_all.click()
             sleep(3)
-            press.click()
-
+            parse_po_file(current_po)
             sleep(3)
 
-            inv_link = web.find_element_by_link_text("View invoice details").click()
+            buttons = web.find_elements_by_css_selector(".a-button-small")
+            for press in buttons:
+                window = web.window_handles[0]
+                web.switch_to_window(window)
 
-            sleep(3)
+                sleep(3)
+                press.click()
 
-            window1 = web.window_handles[1]
-            web.switch_to_window(window1)
+                sleep(3)
 
-            sleep(3)
+                inv_link = web.find_element_by_link_text("View invoice details").click()
 
-            export_all = web.find_element_by_xpath(
-                '//button[contains(text(), "Export All")]'
-            ).click()
-            sleep(3)
-            parse_item_file()
-            sleep(3)
+                sleep(3)
 
-            web.close()
-            window = web.window_handles[0]
-            web.switch_to_window(window)
+                window1 = web.window_handles[1]
+                web.switch_to_window(window1)
 
-        pyo2(current_po)
+                sleep(3)
+
+                export_all = web.find_element_by_xpath(
+                    '//button[contains(text(), "Export All")]'
+                ).click()
+                sleep(3)
+                parse_item_file()
+                sleep(3)
+
+                web.close()
+                window = web.window_handles[0]
+                web.switch_to_window(window)
+
+            pyo2(current_po)
+        except:
+            web.quit()
+            sleep(180)
+            testing()
         # print(current_po)
 
 
@@ -97,16 +101,18 @@ def parse_po_file(po):
     files = glob.glob(folder_path + file_type)
     max_file = max(files, key=os.path.getctime)
 
-    df = pd.read_csv(max_file)
-    df = df.rename(columns={"Unnamed: 11": "PO Number"})
-    df["Invoice Amount"] = df["Invoice Amount"].replace({"\$": "", ",": ""}, regex=True)
-    df["Invoice Amount"] = df["Invoice Amount"].astype(float)
-    df["PO Number"] = df["PO Number"].fillna(po)
-    # print(df)
-
-    conn = pyodbc.connect(config.connection)
-    cursor = conn.cursor()
     try:
+        df = pd.read_csv(max_file)
+        df = df.rename(columns={"Unnamed: 11": "PO Number"})
+        df["Invoice Amount"] = df["Invoice Amount"].replace(
+            {"\$": "", ",": ""}, regex=True
+        )
+        df["Invoice Amount"] = df["Invoice Amount"].astype(float)
+        df["PO Number"] = df["PO Number"].fillna(po)
+        # print(df)
+
+        conn = pyodbc.connect(config.connection)
+        cursor = conn.cursor()
         for index, row in df.iterrows():
             cursor.execute(
                 "INSERT INTO Invoices (marketplace, invoice_date, due_date, invoice_status, source, actual_paid_amount,payee, invoice_creation_date, invoice_number,invoice_amount,any_deductions, po_number) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -131,6 +137,40 @@ def parse_po_file(po):
             header=True,
             quotechar='"',
         )
+
+
+def parse_po2_file(po):
+    folder_path = r"C:\Users\Dan\Downloads\automation"
+    file_type = "\*csv"
+    files = glob.glob(folder_path + file_type)
+    max_file = max(files, key=os.path.getctime)
+
+    df = pd.read_csv(max_file)
+    df = df.rename(columns={"Unnamed: 11": "PO Number"})
+    df["Invoice Amount"] = df["Invoice Amount"].replace({"\$": "", ",": ""}, regex=True)
+    df["Invoice Amount"] = df["Invoice Amount"].astype(float)
+    df["PO Number"] = df["PO Number"].fillna(po)
+    # print(df)
+
+    conn = pyodbc.connect(config.connection)
+    cursor = conn.cursor()
+    for index, row in df.iterrows():
+        cursor.execute(
+            "INSERT INTO Invoices (marketplace, invoice_date, due_date, invoice_status, source, actual_paid_amount,payee, invoice_creation_date, invoice_number,invoice_amount,any_deductions, po_number) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            row["Marketplace"],
+            row["Invoice Date"],
+            row["Due Date"],
+            row["Invoice Status"],
+            row["Source"],
+            row["Actual Paid Amount"],
+            row["Payee"],
+            row["Invoice Creation Date"],
+            row["Invoice #"],
+            row["Invoice Amount"],
+            row["Any Deductions"],
+            row["PO Number"],
+        )
+        conn.commit()
 
 
 def parse_item_file():
@@ -161,41 +201,41 @@ def parse_item_file():
             "amount_received",
         ],
     )
-    df = df.shift(periods=1, axis=1)
-    # print(df.columns)
-    # print(df)
-    cols = [
-        "unit_cost",
-        "amount",
-        "amount_shortage",
-        "unit_cost_received",
-        "amount_received",
-    ]
-    cols2 = [
-        "last_received_date",
-        "asin_received",
-        "quantity_received",
-        "unit_cost_received",
-        "amount_received",
-    ]
-    # df = df.rename(columns={"Unnamed: 11": "PO Number"})
-    # df["unit_cost","amount","unit_cost_received","amount_received"] = df["unit_cost","amount","unit_cost_received","amount_received"].str.replace("$", "")
-    # df["unit_cost","amount","unit_cost_received","amount_received"] = df["unit_cost","amount","unit_cost_received","amount_received"].astype(float)
-    df[cols] = df[cols].replace({"\$": "", ",": ""}, regex=True)
-    df[cols2] = df[cols2].fillna(0)
-    df[cols] = df[cols].astype(float)
-    # print(df)
-    # df["Unit Cost"] = df["Unit Cost"].str.replace("$", "")
-    # df[8] = df[8].str.replace("$", "")
-    # df["Unit cost"] = df["Unit cost"].astype(float)
-    # df["Unit Cost"] = df["Unit Cost"].astype(float)
-    # df[8] = df[8].astype(float)
-    # print(df)
-    # df["PO Number"] = df["PO Number"].fillna(po)
-
-    conn = pyodbc.connect(config.connection)
-    cursor = conn.cursor()
     try:
+        df = df.shift(periods=1, axis=1)
+        # print(df.columns)
+        # print(df)
+        cols = [
+            "unit_cost",
+            "amount",
+            "amount_shortage",
+            "unit_cost_received",
+            "amount_received",
+        ]
+        cols2 = [
+            "last_received_date",
+            "asin_received",
+            "quantity_received",
+            "unit_cost_received",
+            "amount_received",
+        ]
+        # df = df.rename(columns={"Unnamed: 11": "PO Number"})
+        # df["unit_cost","amount","unit_cost_received","amount_received"] = df["unit_cost","amount","unit_cost_received","amount_received"].str.replace("$", "")
+        # df["unit_cost","amount","unit_cost_received","amount_received"] = df["unit_cost","amount","unit_cost_received","amount_received"].astype(float)
+        df[cols] = df[cols].replace({"\$": "", ",": ""}, regex=True)
+        df[cols2] = df[cols2].fillna(0)
+        df[cols] = df[cols].astype(float)
+        # print(df)
+        # df["Unit Cost"] = df["Unit Cost"].str.replace("$", "")
+        # df[8] = df[8].str.replace("$", "")
+        # df["Unit cost"] = df["Unit cost"].astype(float)
+        # df["Unit Cost"] = df["Unit Cost"].astype(float)
+        # df[8] = df[8].astype(float)
+        # print(df)
+        # df["PO Number"] = df["PO Number"].fillna(po)
+
+        conn = pyodbc.connect(config.connection)
+        cursor = conn.cursor()
         for index, row in df.iterrows():
             # last_received_date
             # asin_received
@@ -231,5 +271,10 @@ def parse_item_file():
         )
 
 
-parse_item_file()
 # testing()
+# parse_item_file()
+try:
+    testing()
+except:
+    sleep(500)
+testing()
